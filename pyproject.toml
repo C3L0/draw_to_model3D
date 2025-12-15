@@ -1,0 +1,11 @@
+[project]
+name = "genai-project"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+requires-python = ">=3.8"
+dependencies = [
+    "pillow>=10.4.0",
+    "streamlit>=1.40.1",
+    "streamlit-drawable-canvas>=0.9.3",
+]
