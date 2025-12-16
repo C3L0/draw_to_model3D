@@ -1,66 +1,99 @@
-import streamlit as st
+import os
 
-from .tools import generate_3d_model, generate_image_from_prompt
+import streamlit as st
+from dotenv import load_dotenv
+from huggingface_hub import InferenceClient
+
+from .tools import (analyze_image_with_qwen, generate_3d_with_triposr,
+                    generate_image_with_flux, tripo_client)
+
+load_dotenv()
+HF_TOKEN = os.getenv("HF_TOKEN")
 
 
 class ArtDirectorAgent:
-    """
-    This agent uses a Chain of Thought (CoT) approach to analyze a sketch,
-    improve it, and convert it to 3D.
-    """
-
-    def __init__(self, openai_client):
-        self.client = openai_client
-        self.history = []  # To store the reasoning steps
-
-    def run(self, user_sketch_image):
-        """
-        Main execution loop implementing the Reasoning process.
-        """
-        st.info("🤖 Agent: Starting reasoning process...")
-
-        # Step 1: Perception & Analysis (Vision)
-        analysis = self._analyze_sketch(user_sketch_image)
-        yield "analysis", analysis
-
-        # Step 2: Reasoning & Planning (Chain of Thought)
-        # Explicitly asking the model to think step-by-step [cite: 30]
-        plan = self._create_improvement_plan(analysis)
-        yield "plan", plan
-
-        # Step 3: Action (Image Generation)
-        # Based on the plan, we generate a high-quality 2D image
-        enhanced_image_url = generate_image_from_prompt(plan["image_prompt"])
-        yield "image", enhanced_image_url
-
-        # Step 4: Self-Correction / Critique [cite: 38]
-        # The agent checks if the generated image matches the intent
-        critique = self._critique_result(analysis, enhanced_image_url)
-        yield "critique", critique
-
-        # NOTE: Here you could add a "while" loop to regenerate if the critique is bad.
-        # For this MVP, we proceed to 3D.
-
-        # Step 5: Final Action (3D Generation)
-        st.info("🤖 Agent: Validating design. Initiating 3D transformation...")
-        model_3d_url = generate_3d_model(enhanced_image_url)
-        yield "model_3d", model_3d_url
-
-    def _analyze_sketch(self, image):
-        # TODO: Send image to GPT-4o Vision to get a description
-        # Mock response for structure
-        return "I see a rough sketch of a medieval chair, but the legs are uneven."
-
-    def _create_improvement_plan(self, analysis):
-        # TODO: Implement Chain of Thought prompting
-        # Prompt: "Think step by step. How can we make this chair realistic?"
-        return {
-            "thought_process": "1. Correct perspective. 2. Add wood texture. 3. Fix lighting.",
-            "image_prompt": "A highly detailed photorealistic medieval wooden chair, studio lighting...",
-        }
-
-    def _critique_result(self, original_analysis, generated_image_url):
-        # TODO: Self-Correction logic
-        return (
-            "The generated image matches the description well. Wood texture is visible."
+    def __init__(self):
+        self.hf_token = os.getenv("HF_TOKEN")
+        # On utilise un LLM texte très performant pour le raisonnement
+        self.llm_client = InferenceClient(
+            model="Qwen/Qwen2.5-72B-Instruct", token=self.hf_token
         )
+
+    def run(self, sketch_path):
+        """
+        Orchestre le flux : Vision -> Raisonnement -> Flux.1 -> TripoSR
+        """
+        # Thought: Analyze the environment
+        if not HF_TOKEN:
+            yield "error", "Missing API Token. Please check your .env file."
+            return
+
+        # Thought: Verify tools are ready (Self-Correction/Reflection)
+        if tripo_client is None:
+            yield (
+                "critique",
+                "3D Engine is offline. I will proceed with 2D enhancement only.",
+            )
+        # Étape 1 : Vision (Analyse)
+        st.write("👁️ **Vision :** Analyse du croquis avec le modèle de vision...")
+        raw_description = analyze_image_with_qwen(sketch_path)
+        yield "analysis", raw_description
+
+        # Étape 2 : Raisonnement (Chain of Thought & Prompt Engineering)
+        # On force le modèle à décomposer le problème [cite: 29]
+        st.write(
+            "🧠 **Raisonnement :** L'agent réfléchit à comment améliorer le dessin..."
+        )
+
+        # Préparation des messages pour l'interface "conversational"
+        messages = [
+            {
+                "role": "system",
+                "content": "Tu es un expert en art digital et en 3D. Tu dois toujours penser étape par étape (Chain of Thought)[cite: 30].",
+            },
+            {
+                "role": "user",
+                "content": f"""Analyser cette description de croquis : "{raw_description}".
+                
+                Suis ce plan :
+                1. Identifie l'objet.
+                2. Imagine un style pro.
+                3. Écris un PROMPT en ANGLAIS pour Flux.1.
+                
+                Format de réponse :
+                THOUGHT: [Ton raisonnement]
+                PROMPT: [Le prompt final]""",
+            },
+        ]
+
+        # Utilisation de chat_completion au lieu de text_generation
+        response_obj = self.llm_client.chat_completion(
+            messages=messages, max_tokens=500
+        )
+
+        # Récupération du contenu textuel
+        response_text = response_obj.choices[0].message.content
+
+        # Parsing de la réponse pour l'interface utilisateur
+        if "PROMPT:" in response_text:
+            thought_part = (
+                response_text.split("PROMPT:")[0].replace("THOUGHT:", "").strip()
+            )
+            final_prompt = response_text.split("PROMPT:")[1].strip()
+        else:
+            thought_part = "Analyse automatique effectuée."
+            final_prompt = response_text
+
+        yield (
+            "plan",
+            {"thought": thought_part, "prompt": final_prompt},
+        )  # Étape 3 : Action (Génération Image avec Flux.1)
+        st.write(f"🎨 **Action :** Génération de l'image avec Flux.1...")
+        improved_image_path = generate_image_with_flux(final_prompt)
+        yield "image", improved_image_path
+
+        # Étape 4 : Action Finale (Génération 3D avec TripoSR)
+        if improved_image_path:
+            st.write("🧊 **Transformation :** Conversion en 3D avec TripoSR...")
+            model_3d_path = generate_3d_with_triposr(improved_image_path)
+            yield "model_3d", model_3d_path
