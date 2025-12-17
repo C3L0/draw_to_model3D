@@ -13,7 +13,7 @@ st.set_page_config(page_title="Agent Créatif : Dessin vers 3D", layout="wide")
 # Initialisation de l'agent
 agent = ArtDirectorAgent()
 
-st.title("🎨 Agent Créatif : Du Dessin à la 3D")
+st.title("Agent Créatif : Du Dessin à la 3D")
 
 col1, col2 = st.columns([1, 1])
 
@@ -29,7 +29,7 @@ with col1:
         key="canvas",
     )
 
-    if st.button("🚀 Lancer le Raisonnement de l'Agent"):
+    if st.button("Lancer le Raisonnement de l'Agent"):
         if canvas_result.image_data is not None:
             # Création d'un fichier temporaire pour le croquis
             with tempfile.NamedTemporaryFile(delete=False, suffix=".png") as tmp_file:
@@ -41,7 +41,7 @@ with col1:
                 st.subheader("2. Résultats de l'Agent")
 
                 # Container pour afficher les étapes de raisonnement (CoT / ReAct)
-                thought_container = st.expander("🧠 Logique de l'Agent", expanded=True)
+                thought_container = st.expander("Logique de l'Agent", expanded=True)
 
                 # Exécution du cycle Pensée -> Action -> Observation
                 for step_type, data in agent.run(sketch_path):
@@ -55,18 +55,25 @@ with col1:
                         st.session_state.prompt = data["prompt"]
 
                     elif step_type == "image":
-                        st.image(data, caption="✨ Amélioration 2D (Flux.1)")
+                        st.image(data, caption="Amélioration 2D (Flux.1)")
 
                     elif step_type == "critique":
                         thought_container.warning(f"**Critique/Reflexion :** {data}")
 
                     elif step_type == "model_3d":
-                        st.success("✅ Modèle 3D généré avec succès !")
-                        st.download_button(
-                            "Télécharger le modèle 3D (.glb)",
-                            data=open(data, "rb"),
-                            file_name="concept_3d.glb",
-                        )
+                        if data is not None:
+                            st.success("Modèle 3D prêt !")
+                            with open(data, "rb") as f:
+                                st.download_button(
+                                    "Télécharger le modèle 3D",
+                                    data=f,
+                                    file_name="concept.glb",
+                                )
+                        else:
+                            # L'agent observe un échec et communique le résultat (Observation)
+                            st.error(
+                                "L'agent a rencontré une erreur lors de la création du modèle 3D."
+                            )
         else:
             st.warning("Veuillez d'abord dessiner une esquisse sur le canvas.")
 # import os
