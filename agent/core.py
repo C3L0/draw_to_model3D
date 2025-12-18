@@ -91,11 +91,9 @@ class ArtDirectorAgent:
                 response_text.split("PROMPT:")[0].replace("THOUGHT:", "").strip()
             )
             final_prompt = response_text.split("PROMPT:")[1].strip()
-            print(f"\nPrompt: {final_prompt}")
         else:
             thought_part = "Analyse automatique effectuée."
             final_prompt = response_text
-            print(f"\nPrompt automatique: {final_prompt}")
 
         yield (
             "plan",

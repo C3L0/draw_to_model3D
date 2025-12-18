@@ -24,7 +24,7 @@ hf_client = InferenceClient()
 def analyze_image_with_qwen(image_path):
     try:
         img = Image.open(image_path)
-        img = img.convert("RGB")
+        # img = img.convert("RGB")
 
         text = " a draw of "
         processor = BlipProcessor.from_pretrained(
@@ -73,8 +73,22 @@ def generate_3d_with_triposr(image_path):
         img.save(image_path)
 
         # parameter from : https://huggingface.co/spaces/stabilityai/stable-fast-3d
+        # fr_result = tripo_client.predict(fr=0.85, api_name="/update_foreground_ratio")
+        # tmp_result = tripo_client.predict(
+        #     x=handle_file(
+        #         "https://github.com/gradio-app/gradio/raw/main/test/test_files/sample_file.pdf"
+        #     ),
+        #     api_name="/lambda",
+        # )
+        # remove backgroud
+        bg_remove_result = tripo_client.predict(
+            image=handle_file(image_path), fr=0.85, api_name="/requires_bg_remove"
+        )
+        processed_image = bg_remove_result[0]
+
+        # generation of 3D model
         result = tripo_client.predict(
-            input_image=handle_file(image_path),
+            input_image=handle_file(processed_image),
             foreground_ratio=0.85,
             remesh_option="None",
             vertex_count=-1,
