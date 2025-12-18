@@ -1,1 +1,10 @@
 .env
+.python-version
+
+*.png
+*.glb
+
+.uv/
+__pycache__/ 
+.venv/
+
