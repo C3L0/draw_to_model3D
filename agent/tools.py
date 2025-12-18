@@ -12,9 +12,8 @@ load_dotenv()
 HF_TOKEN = os.getenv("HF_TOKEN")
 
 # 2. Initialize clients with error handling
-# This prevents the whole app from crashing if one service is down
 try:
-    tripo_client = Client("zxhezexin/openlrm-base-obj-1.0", token=HF_TOKEN)
+    tripo_client = Client("stabilityai/stable-fast-3d", token=HF_TOKEN)
 except Exception as e:
     print(f"Warning: TripoSR Space unavailable: {e}")
     tripo_client = None
@@ -24,17 +23,9 @@ hf_client = InferenceClient()
 
 def analyze_image_with_qwen(image_path):
     try:
-        with open(image_path, "rb") as f:
-            img = Image.open(image_path)
+        img = Image.open(image_path)
+        img = img.convert("RGB")
 
-            # 2. Conversion cruciale : Convertir en RGB
-            # Le canvas Streamlit génère du RGBA (avec transparence).
-            # Beaucoup de modèles de vision plantent s'ils reçoivent 4 canaux au lieu de 3.
-            img = img.convert("RGB")
-        #
-        # Changement de modèle pour plus de stabilité
-        # 'microsoft/git-base' est très performant pour les descriptions simples
-        # response = hf_client.image_to_text(image=img_data, model="microsoft/git-base")
         text = " a draw of "
         processor = BlipProcessor.from_pretrained(
             "Salesforce/blip-image-captioning-base"
@@ -42,7 +33,7 @@ def analyze_image_with_qwen(image_path):
         model = BlipForConditionalGeneration.from_pretrained(
             "Salesforce/blip-image-captioning-base"
         )
-        #
+
         inputs = processor(img, text, return_tensors="pt")
         out = model.generate(**inputs)
         return processor.decode(out[0], skip_special_tokens=True)
@@ -54,38 +45,49 @@ def analyze_image_with_qwen(image_path):
 
 def generate_image_with_flux(prompt):
     """
-    Utilise FLUX.1-schnell (version rapide) pour générer l'image.
+    Use FLUX.1-schnell to generate the image
     """
     try:
-        print(f"Génération Flux avec prompt: {prompt}")
+        print(f"Flux generation with the prompt : {prompt}")
         image = hf_client.text_to_image(
             prompt=prompt,
             model="black-forest-labs/FLUX.1-schnell",
         )
 
-        # Sauvegarder l'image localement pour la passer à l'étape suivante
+        # locally save the image
         output_path = "generated_flux.png"
         image.save(output_path)
         return output_path
     except Exception as e:
-        print(f"Erreur Flux: {e}")
+        print(f"Error Flux: {e}")
         return None
 
 
 def generate_3d_with_triposr(image_path):
     if tripo_client is None:
-        print("Error: TripoSR client not initialized.")
-        return None
+        return "ERROR: 3D Engine offline"
 
     try:
-        # Step-by-step processing as suggested by Chain of Thought
+        img = Image.open(image_path)
+        img.thumbnail((512, 512))
+        img.save(image_path)
+
+        # parameter from : https://huggingface.co/spaces/stabilityai/stable-fast-3d
         result = tripo_client.predict(
             input_image=handle_file(image_path),
-            preprocess=True,
-            api_name="/process_image",
+            foreground_ratio=0.85,
+            remesh_option="None",
+            vertex_count=-1,
+            texture_size=1024,
+            api_name="/run_button",
         )
-        # result[1] is the path to the .glb file
-        return result[1]
+
+        if isinstance(result, (list, tuple)) and len(result) > 1:
+            return result[1]
+        return result
+
     except Exception as e:
-        print(f"3D Generation Error: {e}")
-        return None
+        error_msg = str(e)
+        if "upstream" in error_msg.lower():
+            return "ERROR: Le serveur de Stability AI est saturé. Réessayez avec un dessin plus simple ou attendez quelques minutes."
+        return f"ERROR_3D: {error_msg}"

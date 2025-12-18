@@ -14,74 +14,78 @@ HF_TOKEN = os.getenv("HF_TOKEN")
 class ArtDirectorAgent:
     def __init__(self):
         self.hf_token = os.getenv("HF_TOKEN")
-        # On utilise un LLM texte très performant pour le raisonnement
         self.llm_client = InferenceClient(
             model="Qwen/Qwen2.5-72B-Instruct", token=self.hf_token
         )
 
     def run(self, sketch_path):
         """
-        Orchestre le flux : Vision -> Raisonnement -> Flux.1 -> TripoSR
+        Orchestrate the workflow : vision -> Thinking -> Flux.1 -> Stable-fast-3d
         """
-        # Thought: Analyze the environment
         if not HF_TOKEN:
             yield "error", "Missing API Token. Please check your .env file."
             return
 
-        # Thought: Verify tools are ready (Self-Correction/Reflection)
+        # Verify tools are ready (Self-Correction/Reflection)
         if tripo_client is None:
             yield (
                 "critique",
                 "3D Engine is offline. I will proceed with 2D enhancement only.",
             )
-        # Étape 1 : Vision (Analyse)
+        # Vision Analyze
         st.write("**Vision :** Analyse du croquis avec le modèle de vision...")
         raw_description = analyze_image_with_qwen(sketch_path)
         yield "analysis", raw_description
 
-        # Étape 2 : Raisonnement (Chain of Thought & Prompt Engineering)
-        # On force le modèle à décomposer le problème [cite: 29]
+        # Thinking (Chain of Thought & Prompt Engineering)
         st.write(
             "**Raisonnement :** L'agent réfléchit à comment améliorer le dessin..."
         )
 
-        # Préparation des messages pour l'interface "conversational"
+        # Prepartion of messages for the interface
         messages = [
             {
                 "role": "system",
-                "content": """Tu es un expert spécialisé dans l'interprétation d'esquisses conceptuelles brutes. 
-                Ta mission est d'identifier l'INTENTION derrière le dessin, même s'il est simplifié.
-                Tu dois toujours penser étape par étape (Chain of Thought).""",
+                "content": """Tu es un expert en design industriel et modélisation 3D. 
+                Ta mission est d'interpréter des esquisses pour générer des images 2D optimisées pour la reconstruction 3D (modèles photogrammétriques).
+                
+                RÈGLES CRUCIALES POUR LE PROMPT FLUX.1 :
+                - L'objet doit être sur un FOND BLANC PUR (white background).
+                - L'image doit être un "Studio shot" avec un éclairage neutre sans ombres portées (no shadows).
+                - L'objet doit être ENTIER et centré (no cropping).
+                - Style : Réaliste mais épuré, type catalogue produit.
+                - Évite les textures trop complexes ou les transparences qui perdent les algorithmes 3D.""",
             },
             {
                 "role": "user",
-                "content": f"""Le modèle de vision a décrit le croquis ainsi : "{raw_description}".
+                "content": f"""Le modèle de vision décrit le croquis : "{raw_description}".
                 
-                Suis ce plan de raisonnement:
-                1. ANALYSE : Interprète uniquement l'objet voulu derrière cette description brute.
-                3. ACTION : Écris un PROMPT en ANGLAIS optimisé pour Flux.1 (Générateur d'image).
+                RAISONNEMENT :
+                1. ANALYSE : Identifie l'objet et sa structure géométrique simple.
+                2. ACTION : Crée un PROMPT ANGLAIS pour Flux.1.
                 
-                Format de réponse :
-                THOUGHT: [Ton raisonnement technique ici]
-                PROMPT: [Le prompt final en anglais ici]""",
+                CONTRAINTES PROMPT : Inclus impérativement : "isolated on white background, studio lighting, full object view, 3d model front view, high quality, consistent geometry".
+                
+                Format :
+                THOUGHT: [Ton raisonnement]
+                PROMPT: [Prompt final]""",
             },
         ]
 
-        # Utilisation de chat_completion au lieu de text_generation
         try:
             response_obj = self.llm_client.chat_completion(
                 messages=messages, max_tokens=500
             )
             response_text = response_obj.choices[0].message.content
         except Exception as e:
-            # Ici, l'agent "critique" la situation (Self-Correction)
+            # Self-Correction
             yield (
-                "critique",
-                f"Le service de raisonnement est indisponible (Erreur 500). Utilisation d'un plan de secours.",
+                "critics",
+                f"The thinking service is not accessible Error {e}. Use of second option.",
             )
-            response_text = f"THOUGHT: Server error, using default prompt. PROMPT: A high quality professional 3D render of the sketch."
+            response_text = "THOUGHT: Server error, using default prompt. PROMPT: A high quality professional 3D render of the sketch."
 
-        # Parsing de la réponse pour l'interface utilisateur
+        # Parsing answer for the interface
         if "PROMPT:" in response_text:
             thought_part = (
                 response_text.split("PROMPT:")[0].replace("THOUGHT:", "").strip()
@@ -96,14 +100,17 @@ class ArtDirectorAgent:
         yield (
             "plan",
             {"thought": thought_part, "prompt": final_prompt},
-        )  # Étape 3 : Action (Génération Image avec Flux.1)
-        st.write(f"**Action :** Génération de l'image avec Flux.1...")
+        )
+        #  Action Generation of the image with Flux.1
+        st.write("**Action :** Génération de l'image avec Flux.1...")
         improved_image_path = generate_image_with_flux(final_prompt)
         yield "image", improved_image_path
 
-        # Étape 4 : Action Finale (Génération 3D avec TripoSR)
+        # Action Generation of the 3d model
         if improved_image_path:
-            st.write("**Transformation :** Conversion en 3D avec TripoSR...")
+            st.write(
+                "**Transformation :** Conversion in 3D model with Stable-fast-3d..."
+            )
             model_3d_path = generate_3d_with_triposr(improved_image_path)
             if model_3d_path:
                 yield "model_3d", model_3d_path
