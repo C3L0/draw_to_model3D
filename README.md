@@ -44,6 +44,7 @@ cd genAI_project
 # Pin Python version and sync dependencies
 uv python pin 3.12
 uv sync
+```
 
 ---
 
