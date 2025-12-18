@@ -89,5 +89,5 @@ def generate_3d_with_triposr(image_path):
     except Exception as e:
         error_msg = str(e)
         if "upstream" in error_msg.lower():
-            return "ERROR: Le serveur de Stability AI est saturé. Réessayez avec un dessin plus simple ou attendez quelques minutes."
+            return "ERROR: The Stability AI server is overload, retry later."
         return f"ERROR_3D: {error_msg}"
