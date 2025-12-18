@@ -81,14 +81,14 @@ def generate_3d_with_triposr(image_path):
         #     api_name="/lambda",
         # )
         # remove backgroud
-        bg_remove_result = tripo_client.predict(
-            image=handle_file(image_path), fr=0.85, api_name="/requires_bg_remove"
-        )
-        processed_image = bg_remove_result[0]
+        # bg_remove_result = tripo_client.predict(
+        #     image=handle_file(image_path), fr=0.85, api_name="/requires_bg_remove"
+        # )
+        # processed_image = bg_remove_result[0]
 
         # generation of 3D model
         result = tripo_client.predict(
-            input_image=handle_file(processed_image),
+            input_image=handle_file(image_path),
             foreground_ratio=0.85,
             remesh_option="None",
             vertex_count=-1,
